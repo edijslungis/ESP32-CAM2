@@ -1,46 +1,12 @@
-/*******************************************************************************************************************
-*
-*                         ESP32Cam development board demo sketch using Arduino IDE or PlatformIO
-*                                    Github: https://github.com/alanesq/ESP32Cam-demo
-*
-*                                     Tested with ESP32 board manager version  1.0.6
-*
-*     Starting point sketch for projects using the esp32cam development board with the following features
-*        web server with live video streaming and RGB data from camera demonstrated.
-*        sd card support using 1-bit mode (data pins are usually 2,4,12&13 but using 1bit mode only uses pin 2)
-*        flash led is still available for use (pin 4) and does not flash when accessing sd card
-*        Stores image in Spiffs if no sd card present
-*        PWM control of the illumination/flash LED
-*
-*     GPIO:
-*        You can use io pins 13 and 12 for input or output (but 12 must not be high at boot)
-*        You could also use pins 1 & 3 if you do not use Serial (disable serialDebug in the settings below)
-*        Pins 14, 2 & 15 should be ok to use if you are not using an SD Card
-*        More info:   https://randomnerdtutorials.com/esp32-cam-ai-thinker-pinout/
-*
-*     You can use a MCP23017 io expander chip to give 16 gpio lines by enabling 'useMCP23017' in the setup section and connecting
-*        the i2c pins to 12 and 13 on the esp32cam module.  Note: this requires the adafruit MCP23017 library to be installed.
-*
-*     Created using the Arduino IDE with ESP32 module installed, no additional libraries required
-*        ESP32 support for Arduino IDE: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
-*
-*     Info on the esp32cam board:  https://randomnerdtutorials.com/esp32-cam-video-streaming-face-recognition-arduino-ide/
-*                                  https://github.com/espressif/esp32-camera
-*
-*     To see a more advanced sketch along the same format as this one have a look at https://github.com/alanesq/CameraWifiMotion
-*        which includes email support, FTP, OTA updates and motion detection
-*
-*     esp32cam-demo is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the
-*        implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-*
-*
-*******************************************************************************************************************/
+
 
 #if !defined ESP32
  #error This sketch is only for an ESP32Cam module
 #endif
 
-#include "esp_camera.h"         // https://github.com/espressif/esp32-camera
+
+
+#include "esp_camera.h"         
 
 //   ---------------------------------------------------------------------------------------------------------
 
@@ -59,6 +25,7 @@
  #include <Arduino.h>
 
  // forward declarations
+   void handleTemperature();
    bool initialiseCamera();
    bool cameraImageSettings();
    String localTime();
@@ -89,7 +56,7 @@
 
  bool sendRGBfile = 0;                                  // if set '/rgb' will just return raw rgb data which can be saved as a file rather than display a HTML pag
 
- uint16_t dataRefresh = 2;                              // how often to refresh data on root web page (seconds)
+ uint16_t dataRefresh = 0.1;                              // how often to refresh data on root web page (seconds)
  uint16_t imagerefresh = 2;                             // how often to refresh the image on root web page (seconds)
 
  const bool serialDebug = 1;                            // show debug info. on serial port (1=enabled, disable if using pins 1 and 3 as gpio)
@@ -126,7 +93,7 @@
 
  // NTP - Internet time
    const char* ntpServer = "pool.ntp.org";
-   const char* TZ_INFO    = "GMT+0BST-1,M3.5.0/01:00:00,M10.5.0/02:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
+   const char* TZ_INFO    = "GMT+2BST-1,M3.5.0/01:00:00,M10.5.0/02:00:00";  // enter your time zone (https://remotemonitoringsystems.ca/time-zone-abbreviations.php)
    long unsigned lastNTPtime;
    tm timeinfo;
    time_t now;
@@ -164,6 +131,9 @@
 #include <HTTPClient.h>
 #include "driver/ledc.h"        // used to configure pwm on illumination led
 
+
+
+
 // spiffs used to store images if no sd card present
  #include <SPIFFS.h>
  #include <FS.h>                // gives file access on spiffs
@@ -178,15 +148,13 @@ WebServer server(80);           // serve web pages on port 80
  #include "SD_MMC.h"                         // sd card - see https://randomnerdtutorials.com/esp32-cam-take-photo-save-microsd-card/
  #include <SPI.h>
  #include <FS.h>                             // gives file access
- #define SD_CS 5                             // sd chip select pin = 5
+ #define SD_CS 5        
+ 
+ // sd chip select pin = 5
+
 
 // MCP23017 IO expander on pins 12 and 13 (optional)
- #if useMCP23017 == 1
-   #include <Wire.h>
-   #include "Adafruit_MCP23017.h"
-   Adafruit_MCP23017 mcp;
-   // Wire.setClock(1700000); // set frequency to 1.7mhz
- #endif
+
 
 // Define some global variables:
  uint32_t lastStatus = millis();           // last time status light changed status (to flash all ok led)
@@ -199,15 +167,28 @@ WebServer server(80);           // serve web pages on port 80
 // ******************************************************************************************************************
 
 
+
+
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#define ONE_WIRE_BUS 14
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
 // ---------------------------------------------------------------
 //    -SETUP     SETUP     SETUP     SETUP     SETUP     SETUP
 // ---------------------------------------------------------------
 
 void setup() {
-
+sensors.begin();
  if (serialDebug) {
+
+
+
+
    Serial.begin(serialSpeed);                     // Start serial communication
-   // Serial.setDebugOutput(true);
 
    Serial.println("\n\n\n");                      // line feeds
    Serial.println("-----------------------------------");
@@ -216,8 +197,10 @@ void setup() {
    // Serial.print("Reset reason: " + ESP.getResetReason());
  }
 
- WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);     // Turn-off the 'brownout detector'
 
+
+ WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);     // Turn-off the 'brownout detector'
+ 
  // small indicator led on rear of esp32cam board
    pinMode(indicatorLED, OUTPUT);
    digitalWrite(indicatorLED,HIGH);
@@ -239,6 +222,7 @@ void setup() {
      Serial.print("IP address: ");
      Serial.println(WiFi.localIP());
    }
+                                                                         
    server.begin();                               // start web server
    digitalWrite(indicatorLED,HIGH);              // small indicator led off
 
@@ -366,7 +350,10 @@ setupFlashPWM();    // configure PWM for the illumination LED
 
 void loop() {
 
+
+
  server.handleClient();          // handle any incoming web page requests
+
 
 
 
@@ -375,7 +362,7 @@ void loop() {
 
  //                           <<< YOUR CODE HERE >>>
 
-
+ 
 
 
 
@@ -593,36 +580,69 @@ void sendHeader(WiFiClient &client, char* hTitle) {
       client.write("\r\n");
       client.write("<!DOCTYPE HTML><html lang='en'>\n");
     // HTML / CSS
-      client.printf(R"=====(
-        <head>
-          <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-          <title>%s</title>
-          <style>
-            body {
-              color: black;
-              background-color: #FFFF00;
-              text-align: center;
-            }
-            input {
-              background-color: #FF9900;
-              border: 2px #FF9900;
-              color: blue;
-              padding: 3px 6px;
-              text-align: center;
-              text-decoration: none;
-              display: inline-block;
-              font-size: 16px;
-              cursor: pointer;
-              border-radius: 7px;
-            }
-            input:hover {
-              background-color: #FF4400;
-            }
-          </style>
-        </head>
-        <body>
-        <h1 style='color:red;'>%s</H1>
-      )=====", hTitle, hTitle);
+client.printf(R"=====(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+  <title>%s</title>
+ 
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+ canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: -1;
+    }
+  </style>
+  <script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/110/three.min.js'></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      const renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      window.addEventListener('resize', function() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      const geometry = new THREE.Geometry();
+      for (let i = 0; i < 1000; i++) {
+        const vertex = new THREE.Vector3();
+        vertex.x = Math.random() * 800 - 400;
+        vertex.y = Math.random() * 800 - 400;
+        vertex.z = Math.random() * 800 - 400;
+        geometry.vertices.push(vertex);
+      }
+
+      const material = new THREE.PointsMaterial({ color: 0xffffff });
+      const points = new THREE.Points(geometry, material);
+      scene.add(points);
+
+      camera.position.z = 100;
+
+      function animate() {
+        requestAnimationFrame(animate);
+        points.rotation.x += 0.001;
+        points.rotation.y += 0.001;
+        renderer.render(scene, camera);
+      }
+
+      animate();
+    });
+  </script>
+</head>
+<body></body>
+</html>
+)=====", hTitle);
 }
 
 
@@ -787,14 +807,47 @@ void rootUserInput(WiFiClient &client) {
         digitalWrite(iopinB,!digitalRead(iopinB));             // toggle output pin on/off
       }
 
-    // if button2 was pressed (Cycle illumination LED)
+
+server.on("/updateSlider", HTTP_POST, []() {
+  // Retrieve the value from the slider
+  int sliderValue = server.arg("slider").toInt();
+
+  // Adjust the slider value by 5
+  sliderValue += 5;
+
+  // Limit the slider value within the desired range
+  if (sliderValue < 0) sliderValue = 0;
+  else if (sliderValue > 240) sliderValue = 240;
+
+  // Calculate the brightness level based on the slider value
+  int brightness = map(sliderValue, 0, 240, 0, 255);
+
+  // Set the LED brightness to the calculated value
+  brightLed(brightness);
+
+  // Send a response to indicate success
+  server.send(200, "text/plain", "Slider value updated");
+});
+
+
+
+
+
+
+
+
+
+
+
+
+    /*// if button2 was pressed (Cycle illumination LED)
       if (server.hasArg("button2")) {
         if (serialDebug) Serial.println("Button 2 pressed");
         if (brightLEDbrightness == 0) brightLed(10);                // turn led on dim
         else if (brightLEDbrightness == 10) brightLed(40);          // turn led on medium
         else if (brightLEDbrightness == 40) brightLed(255);         // turn led on full
         else brightLed(0);                                          // turn led off
-      }
+      }*/
 
     // if button3 was pressed (toggle flash)
       if (server.hasArg("button3")) {
@@ -874,7 +927,7 @@ void handleRoot() {
  rootUserInput(client);                                     // Action any user input from this web page
 
  // html header
-   sendHeader(client, "ESP32Cam demo sketch");
+   sendHeader(client, "E.Lungis 4ET");
    client.write("<FORM action='/' method='post'>\n");            // used by the buttons in the html (action = the web page to send it to
 
 
@@ -930,51 +983,39 @@ void handleRoot() {
 
    // Control buttons
      client.write("<br><br>");
-     client.write("<input style='height: 35px;' name='button1' value='Toggle pin 12' type='submit'> \n");
-     client.write("<input style='height: 35px;' name='button2' value='Cycle illumination LED' type='submit'> \n");
-     client.write("<input style='height: 35px;' name='button3' value='Toggle Flash' type='submit'> \n");
-     client.write("<input style='height: 35px;' name='button4' value='Wipe SPIFFS memory' type='submit'> \n");
-     client.write("<input style='height: 35px;' name='button5' value='Change Resolution' type='submit'><br> \n");
+client.write("<label for='slider' style='color: #FFFFFF;'>Spilgtums</label>\n");
+client.write("<input type='range' min='-10' max='240' step='5' value='0' id='slider' name='slider' style='height: 35px; background-color: #0087BD;' onchange='submitValue()' onclick='event.preventDefault(); type='submit'>\n");
+  client.write("<script>\n");
+client.write("function submitValue() {\n");
+client.write("  var sliderValue = document.getElementById('slider').value;\n");
+client.write("  var xhr = new XMLHttpRequest();\n");
+client.write("  xhr.open('POST', '/updateSlider', true);\n");
+client.write("  xhr.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');\n");
+client.write("  xhr.send('slider=' + (parseInt(sliderValue) + 5));\n");
+client.write("}\n");
+client.write("</script>\n");
+   //  client.write("<input style='height: 35px; background-color: #0087BD; ' name='button2' value='Gaisma' type='submit'> \n");
+
+
 
    // Image setting controls
-     client.println("<br>CAMERA SETTINGS: ");
-     client.printf("Brightness: <input type='number' style='width: 50px' name='bright' title='from -2 to +2' min='-2' max='2' value='%d'>  \n", cameraImageBrightness);
-     client.printf("Exposure: <input type='number' style='width: 50px' name='exp' title='from 0 to 1200' min='0' max='1200' value='%d'>  \n", cameraImageExposure);
-     client.printf("Gain: <input type='number' style='width: 50px' name='gain' title='from 0 to 30' min='0' max='30' value='%d'>\n", cameraImageGain);
-     client.println(" <input type='submit' name='submit' value='Submit change / Refresh Image'>");
-     client.println("<br>Set exposure and gain to zero for auto adjust");
+
 
    // links to the other pages available
-     client.write("<br><br>LINKS: \n");
-     client.write("<a href='/photo'>Capture an image</a> - \n");
-     client.write("<a href='/img'>View stored image</a> - \n");
-     client.write("<a href='/rgb'>Capture Image as raw RGB data</a> - \n");
-     client.write("<a href='/stream'>Live stream</a> - \n");
-     client.write("<a href='/test'>Test procedure</a>\n");
+
+
+client.write("<a href='/stream' style='display: inline-block; padding: 10px 20px; background-color: #0087BD; color: white; text-decoration: none; border-radius: 4px; border: none;'>Kamera</a>  \n");
 
     // addnl info if sd card present
-     if (sdcardPresent) {
-       client.write("<br>Note: You can view the individual stored images on sd card with:   http://x.x.x.x/img?img=1");
-     }
+
 
     // capture and show a jpg image
-      client.write("<br><a href='/jpg'>");         // make it a link
-      client.write("<img id='image1' src='/jpg' width='320' height='240' /> </a>");     // show image from http://x.x.x.x/jpg
+
 
     // javascript to refresh the image periodically
-      client.printf(R"=====(
-         <script>
-           function refreshImage(){
-               var timestamp = new Date().getTime();
-               var el = document.getElementById('image1');
-               var queryString = '?t=' + timestamp;
-               el.src = '/jpg' + queryString;
-           }
-           setInterval(function() { refreshImage(); }, %d);
-         </script>
-      )=====", imagerefresh * 1013);        // 1013 is just to stop it refreshing at the same time as /data
 
-    client.println("<br><br><a href='https://github.com/alanesq/esp32cam-demo'>Sketch Info</a>");
+
+
 
 
  // --------------------------------------------------------------------
@@ -1008,31 +1049,29 @@ void handleData(){
 
   // line1 - sd card
     if (!sdcardPresent) {
-      reply += "<span style='color:blue;'>NO SD CARD DETECTED</span>";
+      reply += "<span style='color:blue;'></span>";
     } else {
       reply += "SD Card: " + String(SDusedSpace) + "MB used - " + String(SDfreeSpace) + "MB free";
     }
     reply += ",";
-
-  // line2 - illumination/flash led
-    reply += "Illumination led brightness=" + String(brightLEDbrightness);
-    reply += " &ensp; Flash is ";     // Note: '&ensp;' leaves a gap
-    reply += (flashRequired) ? "Enabled" : "Off";
-    reply += ",";
-
   // line3 - Current real time
-    reply += "Current time: " + localTime();
-    reply += ",";
-
-  // line4 - gpio pin status
-    reply += "GPIO output pin 12 is: ";
-    reply += (digitalRead(iopinB)==1) ? "ON" : "OFF";
-    reply += " &ensp; GPIO input pin 13 is: ";
-    reply += (digitalRead(iopinA)==1) ? "ON" : "OFF";
-    reply += ",";
+reply += "<span style='color: #0087BD;'>Current time: " + localTime() + "</span>";
+reply += ",";
+reply += "<span style='color: #0087BD;'>GPIO output pin 12 is:</span>";
+reply += (digitalRead(iopinB) == 1) ? "<span style='color: #0087BD;'>ON</span>" : "<span style='color: blue;'>OFF</span><br>";
+reply += "<span style='color: #0087BD;'>Kustiba: </span>";
+reply += (digitalRead(iopinA) == 1) ? "<span style='color: #0087BD;'>Uztverta</span>" : "<span style='color: blue;'>Neuztverta</span>";
+reply += ",";
+  
+sensors.requestTemperatures();
+float temperatureC = sensors.getTempCByIndex(0);
+reply += "<span style='color: white;'>Temperature: </span>";
+reply += "<span style='color: white;'>";
+reply += String(temperatureC);
+reply += "</span><span style='color: white;'> &deg;C</span>";
 
   // line5 - image resolution
-    reply += "Image size: " + ImageResDetails;
+
 
 
    server.send(200, "text/plane", reply); //Send millis value only to client ajax request
@@ -1445,8 +1484,15 @@ void handleStream(){
  const int hdrLen = strlen(HEADER);         // length of the stored text, used when sending to web page
  const int bdrLen = strlen(BOUNDARY);
  const int cntLen = strlen(CTNTTYPE);
+
+
+ 
  client.write(HEADER, hdrLen);
+
  client.write(BOUNDARY, bdrLen);
+
+ 
+    
 
  // send live jpg images until client disconnects
  while (true)
@@ -1464,9 +1510,11 @@ void handleStream(){
        client.write(BOUNDARY, bdrLen);             // send html boundary      see https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type
        esp_camera_fb_return(fb);                   // return image buffer so memory can be released
    }
+       
  }
-
  if (serialDebug) Serial.println("Video stream stopped");
+
+ 
  delay(3);
  client.stop();
 
@@ -1492,19 +1540,20 @@ int requestWebPage(String* page, String* received, int maxWaitTime=5000){
   if (serialDebug) Serial.println("requesting web page: " + *page);
 
   WiFiClient client;
+
   HTTPClient http;     // see:  https://github.com/esp8266/Arduino/blob/master/libraries/ESP8266HTTPClient
   http.setTimeout(maxWaitTime);
   http.begin(client, *page);      // for https requires (client, *page, thumbprint)  e.g.String thumbprint="08:3B:71:72:02:43:6E:CA:ED:42:86:93:BA:7E:DF:81:C4:BC:62:30";
   int httpCode = http.GET();      // http codes: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
   if (serialDebug) Serial.println("http code: " + String(httpCode));
-
+   sendHeader(client, "E.Lungis 4ET");
   if (httpCode > 0) {
     *received = http.getString();
   } else {
     *received = "error:" + String(httpCode);
   }
   if (serialDebug) Serial.println(*received);
-
+     sendHeader(client, "E.Lungis 4ET");
   http.end();   //Close connection
   if (serialDebug) Serial.println("Web connection closed");
 
@@ -1606,6 +1655,9 @@ void handleTest() {
  sendFooter(client);     // close web page
 
 }  // handleTest
+void handleTemperature() {
+  sensors.begin();
+}
 
 
 // ******************************************************************************************************************
